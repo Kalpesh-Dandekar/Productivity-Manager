@@ -1,0 +1,33 @@
+name: login_app
+description: "A new Flutter project."
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.6.2 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  fl_chart: ^0.63.0  # Correctly indented
+  google_fonts: ^6.2.1  # Correctly indented
+  flutter_animate: ^4.5.0
+  shared_preferences: ^2.2.2  # To save rank data
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/ranks/Beginner_rank.jpg
+    - assets/ranks/Apprentice_rank.jpg
+    - assets/ranks/Challenger_rank.jpg
+    - assets/ranks/Achiever_rank.jpg
+    - assets/ranks/Master_rank.jpg
