@@ -1,290 +1,272 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'dart:async';
 
 class HomeSection extends StatefulWidget {
-  const HomeSection({Key? key}) : super(key: key);
+  final String username;
+  const HomeSection({Key? key, required this.username}) : super(key: key);
 
   @override
   _HomeSectionState createState() => _HomeSectionState();
 }
 
 class _HomeSectionState extends State<HomeSection> {
+  List<Map<String, dynamic>> tasks = [];
   int pomodoroMinutes = 25;
   int pomodoroSeconds = 0;
   bool isRunning = false;
-  late Timer _timer;
-  bool isDarkMode = false;
-
-  // Task lists
-  List<Map<String, dynamic>> tasks = [];
-
-  // Streak progress and rank progress
-  double streakProgress = 0.7; // example streak progress
-  double rankProgress = 0.8; // example rank progress
-
-  void _startPomodoro() {
-    setState(() {
-      isRunning = true;
-    });
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (pomodoroSeconds > 0) {
-        setState(() {
-          pomodoroSeconds--;
-        });
-      } else if (pomodoroMinutes > 0) {
-        setState(() {
-          pomodoroMinutes--;
-          pomodoroSeconds = 59;
-        });
-      } else {
-        _timer.cancel();
-        setState(() {
-          isRunning = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pomodoro is over! Time for a break.')),
-        );
-      }
-    });
-  }
-
-  void _pausePomodoro() {
-    setState(() {
-      isRunning = false;
-    });
-    _timer.cancel();
-  }
-
-  void _resetPomodoro() {
-    setState(() {
-      pomodoroMinutes = 25;
-      pomodoroSeconds = 0;
-      isRunning = false;
-    });
-    _timer.cancel();
-  }
-
-  // Function to add a new task
-  void _addTask(String task, String priority) {
-    setState(() {
-      tasks.add({'task': task, 'priority': priority});
-    });
-  }
-
-  void _toggleTheme() {
-    setState(() {
-      isDarkMode = !isDarkMode;
-    });
-  }
+  Timer? _timer;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Welcome back, Jimmy!"),
-        actions: [
-          IconButton(
-            icon: Icon(isDarkMode ? Icons.brightness_7 : Icons.brightness_6),
-            onPressed: _toggleTheme,
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Welcome Text & Motivational Quote
-            const Text(
-              "Welcome back, Jimmy!",
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              "“The only way to do great work is to love what you do.”",
-              style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
-            ),
-            const SizedBox(height: 20),
-
-            // Rank Progress at the top right
-            Align(
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text(
-                    "Rank: Master",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 5),
-                  LinearProgressIndicator(value: rankProgress, color: Colors.orange),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Task List with Priority Cards
-            const Text(
-              "Task List",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                itemCount: tasks.length,
-                itemBuilder: (context, index) {
-                  return _taskCard(tasks[index]);
-                },
-              ),
-            ),
-
-            // Quick Add Task Button
-            ElevatedButton(
-              onPressed: () {
-                _showTaskDialog();
-              },
-              child: const Text("Add Task"),
-            ),
-            const SizedBox(height: 20),
-
-            // Pomodoro Timer (Circle Design)
-            const Text("Pomodoro Timer", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            Center(
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.orangeAccent,
-                ),
-                child: Center(
-                  child: Text(
-                    "$pomodoroMinutes:${pomodoroSeconds.toString().padLeft(2, '0')}",
-                    style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 30),
-                  onPressed: _startPomodoro,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.pause, size: 30),
-                  onPressed: _pausePomodoro,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.replay, size: 30),
-                  onPressed: _resetPomodoro,
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Streak Progress
-            const Text("Streak: 5 Days", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            LinearProgressIndicator(
-              value: streakProgress,
-              color: Colors.orange,
-              backgroundColor: Colors.grey[300],
-            ),
-          ],
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    _loadTasks();
   }
 
-  // Task Card based on priority
-  Widget _taskCard(Map<String, dynamic> taskData) {
-    Color taskColor;
-    switch (taskData['priority']) {
-      case 'High':
-        taskColor = Colors.red;
-        break;
-      case 'Medium':
-        taskColor = Colors.yellow;
-        break;
-      default:
-        taskColor = Colors.green;
+  /// ✅ Fetch tasks from Flask backend
+  Future<void> _loadTasks() async {
+    final response = await http.get(Uri.parse('http://10.0.2.2:5000/tasks?username=${widget.username}'));
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> decodedData = json.decode(response.body);
+      setState(() {
+        tasks = List<Map<String, dynamic>>.from(decodedData['tasks']);
+      });
+    } else {
+      throw Exception('Failed to load tasks');
     }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      color: taskColor,
-      child: ListTile(
-        title: Text(
-          taskData['task'],
-          style: const TextStyle(color: Colors.white),
-        ),
-        trailing: Icon(Icons.check_circle_outline, color: Colors.white),
-      ),
-    );
   }
 
-  // Dialog to Add a Task
+  /// ✅ Add a new task
+  Future<void> _addTask(String task) async {
+    final response = await http.post(
+      Uri.parse('http://10.0.2.2:5000/tasks'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'username': widget.username, 'task': task, 'status': 'pending'}),
+    );
+
+    if (response.statusCode == 201) {
+      _loadTasks();
+    } else {
+      throw Exception('Failed to add task');
+    }
+  }
+
+  /// ✅ Update task completion status using task name
+  Future<void> _markTaskCompleted(int index) async {
+    Map<String, dynamic> taskData = tasks[index];
+
+    final response = await http.put(
+      Uri.parse('http://10.0.2.2:5000/tasks/mark-completed'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'username': widget.username,
+        'task': taskData['task'],
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      setState(() {
+        taskData['status'] = taskData['status'] == 'completed' ? 'pending' : 'completed';
+      });
+    } else {
+      throw Exception('Failed to update task');
+    }
+  }
+
+  /// ✅ DELETE Task using task name
+  Future<void> _deleteTask(int index) async {
+    String taskName = tasks[index]['task'];
+
+    final response = await http.delete(
+      Uri.parse('http://10.0.2.2:5000/tasks'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'username': widget.username, 'task': taskName}),
+    );
+
+    if (response.statusCode == 200) {
+      setState(() {
+        tasks.removeAt(index);
+      });
+    } else {
+      throw Exception('Failed to delete task');
+    }
+  }
+
+  /// ✅ Show task input dialog
   void _showTaskDialog() {
     String newTask = '';
-    String selectedPriority = 'Low';
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('Add New Task'),
-          content: Column(
-            children: [
-              TextField(
-                onChanged: (value) {
-                  newTask = value;
-                },
-                decoration: const InputDecoration(labelText: 'Task Description'),
-              ),
-              DropdownButton<String>(
-                value: selectedPriority,
-                onChanged: (String? newValue) {
-                  setState(() {
-                    selectedPriority = newValue!;
-                  });
-                },
-                items: <String>['Low', 'Medium', 'High']
-                    .map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-              ),
-            ],
+          content: TextField(
+            onChanged: (value) => newTask = value,
+            decoration: const InputDecoration(labelText: 'Task'),
           ),
           actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
             TextButton(
               onPressed: () {
+                _addTask(newTask);
                 Navigator.of(context).pop();
               },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (newTask.isNotEmpty) {
-                  _addTask(newTask, selectedPriority);
-                }
-                Navigator.of(context).pop();
-              },
-              child: const Text('Add Task'),
+              child: const Text('Add Task', style: TextStyle(color: Colors.orange)),
             ),
           ],
         );
       },
+    );
+  }
+
+  /// ✅ Task Card Widget
+  Widget _taskCard(int index) {
+    Map<String, dynamic> taskData = tasks[index];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      color: Colors.orange,
+      child: ListTile(
+        title: Text(
+          taskData['task'],
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            decoration: taskData['status'] == 'completed' ? TextDecoration.lineThrough : TextDecoration.none,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                taskData['status'] == 'completed' ? Icons.check_circle : Icons.circle_outlined,
+                color: Colors.white,
+              ),
+              onPressed: () => _markTaskCompleted(index),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.white),
+              onPressed: () => _deleteTask(index),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ✅ Pomodoro Timer Functions
+  void _startTimer() {
+    if (!isRunning) {
+      setState(() {
+        isRunning = true;
+      });
+
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          if (pomodoroMinutes == 0 && pomodoroSeconds == 0) {
+            _stopTimer();
+          } else if (pomodoroSeconds == 0) {
+            pomodoroMinutes--;
+            pomodoroSeconds = 59;
+          } else {
+            pomodoroSeconds--;
+          }
+        });
+      });
+    }
+  }
+
+  void _stopTimer() {
+    setState(() {
+      isRunning = false;
+      pomodoroMinutes = 25;
+      pomodoroSeconds = 0;
+    });
+    _timer?.cancel();
+  }
+
+  /// ✅ Circular Timer Widget
+  Widget _buildCircularTimer() {
+    double progress = ((pomodoroMinutes * 60 + pomodoroSeconds) / 1500);
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 200,
+          height: 200,
+          child: CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 10,
+            backgroundColor: Colors.grey.shade300,
+            color: Colors.orange,
+          ),
+        ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              "$pomodoroMinutes:${pomodoroSeconds.toString().padLeft(2, '0')}",
+              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _startTimer,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  child: const Text("Start", style: TextStyle(color: Colors.white)),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: _stopTimer,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text("Stop", style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// ✅ Build UI
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Welcome back, ${widget.username}!")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Your Tasks", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Expanded(
+              child: tasks.isEmpty
+                  ? const Center(child: Text("No tasks added yet."))
+                  : ListView.builder(
+                itemCount: tasks.length,
+                itemBuilder: (context, index) => _taskCard(index),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Center(child: _buildCircularTimer()),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showTaskDialog,
+        icon: const Icon(Icons.add),
+        label: const Text("New Task"),
+        backgroundColor: Colors.orange,
+      ),
     );
   }
 }

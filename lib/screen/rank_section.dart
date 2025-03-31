@@ -1,9 +1,12 @@
 import 'dart:ui'; // For the BackdropFilter
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RankSection extends StatefulWidget {
-  const RankSection({Key? key}) : super(key: key);
+  final String username;
+  const RankSection({Key? key, required this.username}) : super(key: key);
 
   @override
   _RankSectionState createState() => _RankSectionState();
@@ -15,48 +18,79 @@ class _RankSectionState extends State<RankSection> {
   String rankDescription = "You are just starting!";
   String rankQuote = "The journey of a thousand miles begins with a single step.";
 
-  void _updateRank() {
-    if (points >= 1701) {
-      rank = "Master";
-      rankDescription = "You’ve reached the highest rank!";
-      rankQuote = "The only way to do great work is to love what you do.";
-    } else if (points >= 1001) {
-      rank = "Achiever";
-      rankDescription = "You’ve achieved greatness!";
-      rankQuote = "Success is the sum of small efforts, repeated day in and day out.";
-    } else if (points >= 501) {
-      rank = "Challenger";
-      rankDescription = "You’re a challenger now!";
-      rankQuote = "The only limit to our realization of tomorrow is our doubts of today.";
-    } else if (points >= 201) {
-      rank = "Apprentice";
-      rankDescription = "You’re learning fast!";
-      rankQuote = "You are what you do, not what you say you'll do.";
-    } else {
-      rank = "Beginner";
-      rankDescription = "You are just starting out!";
-      rankQuote = "The journey of a thousand miles begins with a single step.";
+  final String apiUrl = "http://10.0.2.2:5000"; // API endpoint
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPoints();
+  }
+
+  Future<void> _loadPoints() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiUrl/rank/get_rank/${widget.username}'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data != null) {
+          setState(() {
+            points = data['points'] ?? 0;
+            rank = data['rank']['rank'] ?? "Beginner";
+            rankDescription = data['rank']['description'] ?? "You are just starting!";
+            rankQuote = data['rank']['quote'] ?? "The journey of a thousand miles begins with a single step.";
+          });
+
+          print("✅ User Data Loaded: $points points, Rank: $rank");
+        } else {
+          print("⚠️ No data received.");
+        }
+      } else {
+        print('❌ Failed to load points: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error loading points: $e');
+    }
+  }
+
+  Future<void> _savePoints(int value) async {
+    try {
+      print("🔄 Sending request to update points for ${widget.username}: $value");
+      final response = await http.post(
+        Uri.parse('$apiUrl/rank/update_points'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'username': widget.username, 'points': value}),
+      );
+
+      print("📩 Response Code: ${response.statusCode}");
+      print("📜 Response Body: ${response.body}");
+
+      if (response.statusCode == 200) {
+        _loadPoints(); // Reload updated points and rank
+      } else {
+        print('❌ Failed to update points: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error updating points: $e');
     }
   }
 
   void _addPoints(int value) {
-    setState(() {
-      points += value;
-      _updateRank();
-    });
+    _savePoints(value);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Rank System"),
+        title: Text("Rank System - ${widget.username}"),
         backgroundColor: Colors.orange,
         elevation: 0,
       ),
       body: Stack(
         children: [
-          // Background effect using BackdropFilter for a smooth glassy look
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -79,12 +113,11 @@ class _RankSectionState extends State<RankSection> {
             child: Card(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               elevation: 10,
-              color: Colors.white.withOpacity(0.9), // Semi-transparent background for a glassy effect
+              color: Colors.white.withOpacity(0.9),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Rank Image
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Image.asset(
@@ -92,9 +125,12 @@ class _RankSectionState extends State<RankSection> {
                       height: 100,
                       width: 100,
                       fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        print("❌ Image not found: ${_getRankImage()}");
+                        return Icon(Icons.image_not_supported, size: 100, color: Colors.grey);
+                      },
                     ),
                   ),
-                  // Rank and Points Text
                   Text(
                     "Rank: $rank",
                     style: TextStyle(
@@ -109,7 +145,6 @@ class _RankSectionState extends State<RankSection> {
                     style: const TextStyle(fontSize: 16, color: Colors.black54),
                   ),
                   const SizedBox(height: 10),
-                  // Rank Description
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Text(
@@ -119,7 +154,6 @@ class _RankSectionState extends State<RankSection> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Quote Section
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Text(
@@ -129,10 +163,8 @@ class _RankSectionState extends State<RankSection> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Progress Bar
                   _buildProgressBar(),
                   const SizedBox(height: 20),
-                  // Points Buttons
                   _buildPointsButtons(),
                 ],
               ),
@@ -144,89 +176,47 @@ class _RankSectionState extends State<RankSection> {
   }
 
   Widget _buildProgressBar() {
-    double progress = (points % 500) / 500;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Progress",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: LinearProgressIndicator(
-            value: progress,
-            backgroundColor: Colors.white38,
-            color: Colors.orange,
-            minHeight: 10,
-          ),
-        ),
-      ],
+    return LinearProgressIndicator(
+      value: points / 2000,
+      backgroundColor: Colors.grey[300],
+      color: _getRankColor(),
+      minHeight: 10,
     );
   }
 
   Widget _buildPointsButtons() {
-    return Column(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _customButton("Complete Minor Task (+20)", Colors.blue, () => _addPoints(20)),
-        const SizedBox(height: 10),
-        _customButton("Complete Major Task (+30)", Colors.green, () => _addPoints(30)),
-        const SizedBox(height: 10),
-        _customButton("Bonus Task (+40)", Colors.orange, () => _addPoints(40)),
+        ElevatedButton(
+          onPressed: () => _addPoints(10),
+          child: Text("+10 Points"),
+        ),
+        const SizedBox(width: 10),
+        ElevatedButton(
+          onPressed: () => _addPoints(50),
+          child: Text("+50 Points"),
+        ),
       ],
     );
   }
 
-  Widget _customButton(String text, Color color, VoidCallback onPressed) {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-      ),
-    );
+  String _getRankImage() {
+    String formattedRank = rank[0].toUpperCase() + rank.substring(1).toLowerCase();
+    String imagePath = 'assets/ranks/${formattedRank}_rank.jpg';
+    print("🖼️ Trying to load image: $imagePath");
+    return imagePath;
   }
 
-  String _getRankImage() {
-    switch (rank) {
-      case "Beginner":
-        return 'assets/ranks/Beginner_rank.jpg';
-      case "Apprentice":
-        return 'assets/ranks/Apprentice_rank.jpg';
-      case "Challenger":
-        return 'assets/ranks/Challenger_rank.jpg';
-      case "Achiever":
-        return 'assets/ranks/Achiever_rank.jpg';
-      case "Master":
-        return 'assets/ranks/Master_rank.jpg';
-      default:
-        return 'assets/ranks/Beginner_rank.jpg';
-    }
-  }
 
   Color _getRankColor() {
-    switch (rank) {
-      case "Beginner":
-        return Colors.grey;
-      case "Apprentice":
-        return Colors.blue;
-      case "Challenger":
-        return Colors.green;
-      case "Achiever":
-        return Colors.orange;
-      case "Master":
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
+    Map<String, Color> rankColors = {
+      "Beginner": Colors.grey,
+      "Apprentice": Colors.blue,
+      "Challenger": Colors.green,
+      "Achiever": Colors.orange,
+      "Master": Colors.red,
+    };
+    return rankColors[rank] ?? Colors.grey;
   }
 }

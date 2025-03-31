@@ -1,56 +1,197 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
-class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+class GoalTrackerScreen extends StatefulWidget {
+  final String username;
+
+  GoalTrackerScreen({required this.username});
+
+  @override
+  _GoalTrackerScreenState createState() => _GoalTrackerScreenState();
+}
+
+class _GoalTrackerScreenState extends State<GoalTrackerScreen> {
+  List<Map<String, dynamic>> goals = [];
+  List<Map<String, dynamic>> achievements = [];
+
+  final TextEditingController _goalController = TextEditingController();
+  final TextEditingController _achievementController = TextEditingController();
+
+  final String apiUrl = "http://10.0.2.2:5000"; // Flask backend URL
+
+  @override
+  void initState() {
+    super.initState();
+    fetchGoalsAndAchievements();
+  }
+
+  Future<void> fetchGoalsAndAchievements() async {
+    try {
+      final goalsResponse = await http.get(Uri.parse('$apiUrl/goal?username=${widget.username}'));
+      final achievementsResponse = await http.get(Uri.parse('$apiUrl/achievement?username=${widget.username}'));
+
+      if (goalsResponse.statusCode == 200 && achievementsResponse.statusCode == 200) {
+        setState(() {
+          goals = List<Map<String, dynamic>>.from(json.decode(goalsResponse.body));
+          achievements = List<Map<String, dynamic>>.from(json.decode(achievementsResponse.body));
+        });
+      }
+    } catch (e) {
+      print("Error fetching data: $e");
+    }
+  }
+
+  Future<void> addGoal() async {
+    if (_goalController.text.isNotEmpty) {
+      final response = await http.post(
+        Uri.parse('$apiUrl/goal'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"username": widget.username, "goal": _goalController.text}),
+      );
+      if (response.statusCode == 201) {
+        fetchGoalsAndAchievements();
+        _goalController.clear();
+      }
+    }
+  }
+
+  Future<void> markGoalCompleted(String goal) async {
+    final response = await http.put(
+      Uri.parse('$apiUrl/goal/complete'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"username": widget.username, "goal": goal}),
+    );
+    if (response.statusCode == 200) {
+      fetchGoalsAndAchievements();
+    }
+  }
+
+  Future<void> addAchievement() async {
+    if (_achievementController.text.isNotEmpty) {
+      final response = await http.post(
+        Uri.parse('$apiUrl/achievement'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"username": widget.username, "text": _achievementController.text}),
+      );
+      if (response.statusCode == 201) {
+        fetchGoalsAndAchievements();
+        _achievementController.clear();
+      }
+    }
+  }
+
+  Future<void> deleteGoal(String goal) async {
+    final response = await http.delete(
+      Uri.parse('$apiUrl/goal'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"username": widget.username, "goal": goal}),
+    );
+    if (response.statusCode == 200) {
+      fetchGoalsAndAchievements();
+    }
+  }
+
+  Future<void> deleteAchievement(String text) async {
+    final response = await http.delete(
+      Uri.parse('$apiUrl/achievement'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"username": widget.username, "text": text}),
+    );
+    if (response.statusCode == 200) {
+      fetchGoalsAndAchievements();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: const Text("Hello, Jimmy"),
-        backgroundColor: Colors.orangeAccent,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
+      appBar: AppBar(title: Text("Goal Tracker"), backgroundColor: Colors.orange),
+      body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSummaryCard(),
-            const SizedBox(height: 20),
-            _buildWeeklyComparisonCard(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryCard() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      elevation: 5,
-      color: Colors.orangeAccent,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "🔥 Rank Progress",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            _buildHeader("Goals"),
+            SizedBox(height: 8),
+            TextField(
+              controller: _goalController,
+              decoration: InputDecoration(
+                hintText: "Enter a goal...",
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
             ),
-            const SizedBox(height: 5),
-            LinearProgressIndicator(value: 0.6, backgroundColor: Colors.white70, color: Colors.white),
-            const SizedBox(height: 15),
-            _buildInfoRow("✅ Tasks Completed", "15"),
-            _buildInfoRow("🎁 Bonus Earned (Week)", "150"),
-            _buildInfoRow("🎁 Bonus Earned (Month)", "450"),
-            const SizedBox(height: 10),
-            const Text(
-              "“Success is the sum of small efforts, repeated day in and day out.”",
-              style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic, color: Colors.white),
+            SizedBox(height: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              onPressed: addGoal,
+              child: Text("Add Goal", style: TextStyle(color: Colors.white)),
+            ),
+            SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: goals.length,
+                itemBuilder: (context, index) {
+                  var goal = goals[index];
+                  return Card(
+                    color: goal['completed'] ? Colors.green.shade200 : Colors.blue.shade200,
+                    child: ListTile(
+                      title: Text(goal['goal']),
+                      trailing: Wrap(
+                        spacing: 10,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.check, color: Colors.white),
+                            onPressed: () => markGoalCompleted(goal['goal']),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => deleteGoal(goal['goal']),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 16),
+            _buildHeader("Achievements"),
+            SizedBox(height: 8),
+            TextField(
+              controller: _achievementController,
+              decoration: InputDecoration(
+                hintText: "Enter achievement...",
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            SizedBox(height: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              onPressed: addAchievement,
+              child: Text("Add Achievement", style: TextStyle(color: Colors.white)),
+            ),
+            SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: achievements.length,
+                itemBuilder: (context, index) {
+                  var achievement = achievements[index];
+                  return Card(
+                    color: Colors.purple.shade200,
+                    child: ListTile(
+                      title: Text(achievement['text']),
+                      subtitle: Text("Date: ${achievement['date']}"),
+                      trailing: IconButton(
+                        icon: Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => deleteAchievement(achievement['text']),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -58,63 +199,13 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
-          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWeeklyComparisonCard() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      elevation: 5,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("📊 Weekly Efficiency Comparison",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 15),
-            SizedBox(height: 200, child: _buildBarChart()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBarChart() {
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        barGroups: [
-          BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: 5, color: Colors.blue, width: 16)]),
-          BarChartGroupData(x: 2, barRods: [BarChartRodData(toY: 8, color: Colors.orange, width: 16)]),
-          BarChartGroupData(x: 3, barRods: [BarChartRodData(toY: 6, color: Colors.red, width: 16)]),
-          BarChartGroupData(x: 4, barRods: [BarChartRodData(toY: 7, color: Colors.green, width: 16)]),
-          BarChartGroupData(x: 5, barRods: [BarChartRodData(toY: 9, color: Colors.purple, width: 16)]),
-        ],
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: true, getTitlesWidget: (value, meta) {
-              List<String> days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-              return Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text(days[value.toInt() - 1], style: const TextStyle(fontSize: 14)),
-              );
-            }),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        gridData: FlGridData(show: false),
+  Widget _buildHeader(String title) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(8)),
+      child: Center(
+        child: Text(title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
       ),
     );
   }
